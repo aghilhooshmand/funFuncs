@@ -189,48 +189,6 @@ pytest
 - [statsmodels](https://www.statsmodels.org/) — Anderson–Darling (*normal_ad*)
 - [Matplotlib](https://matplotlib.org/) — diagnostic plots
 
-## Publish to GitHub
-
-### 1. Create a new empty repository on GitHub
-
-Create a repo (for example: `FunFuncs`) from [GitHub New Repository](https://github.com/new). Do not add README/license/gitignore there, since this project already has files.
-
-### 2. Initialize git locally (first time only)
-
-```bash
-cd "/home/aghil/Documents/my document/limerick/projects/FunFuncs"
-git init
-git add .
-git commit -m "Initial commit: add FunFuncs statistics modules"
-```
-
-### 3. Link local repo to GitHub and push
-
-Replace `<your-username>` with your GitHub username:
-
-```bash
-git branch -M main
-git remote add origin https://github.com/<your-username>/FunFuncs.git
-git push -u origin main
-```
-
-If your remote already exists, use:
-
-```bash
-git remote set-url origin https://github.com/<your-username>/FunFuncs.git
-git push -u origin main
-```
-
-### 4. Next updates
-
-For future changes:
-
-```bash
-git add .
-git commit -m "your message"
-git push
-```
-
 ## License
 
 Add a license file if you plan to share or publish this repository.
