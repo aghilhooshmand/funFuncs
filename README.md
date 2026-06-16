@@ -9,7 +9,11 @@ FunFuncs/
 ├── funfuncs/
 │   ├── statistics/                  # Statistical utilities
 │   │   ├── normality.py             # Univariate normality tester
-│   │   └── multivariate_normality.py # High-dimensional MV normality
+│   │   ├── multivariate_normality.py # High-dimensional MV normality helpers
+│   │   ├── nn_funcs.py              # Python port of RCodes/funcs.r
+│   │   ├── nn_funcs2.py             # Python port of RCodes/funcs2.R
+│   │   └── nn_runme.py              # Python port of RCodes/runme.R
+├── RCodes/                          # Original R reference scripts
 │   └── ...                  # Future: preprocessing, analysis, ...
 ├── examples/
 ├── tests/
@@ -86,6 +90,38 @@ Run the bundled example:
 
 ```bash
 python examples/normality_example.py
+```
+
+## Module: statistics — nearest-neighbor normality test (Chen & Xia, 2021)
+
+Python ports of the paper implementation in `RCodes/`:
+
+| R file | Python file | Main functions |
+|--------|-------------|----------------|
+| `RCodes/funcs.r` | `funfuncs/statistics/nn_funcs.py` | `getdis`, `gen`, `get_xy_stat`, `get_r`, `getp`, `getpow` |
+| `RCodes/funcs2.R` | `funfuncs/statistics/nn_funcs2.py` | `adapt_thres_cov`, `mv_shapiro_test_adapt_thres_mod` |
+| `RCodes/runme.R` | `funfuncs/statistics/nn_runme.py` | `run_simulation` |
+
+`getp` implements the nearest-neighbor normality test (Algorithm 1/2) from Chen & Xia (2021), including the NEW test (`Yp`), extended Friedman–Rafsky (`Op`), and related diagnostics.
+
+### Quick usage
+
+```python
+import numpy as np
+from funfuncs.statistics import gen, getp, run_simulation
+
+# Single dataset test (paper NEW test p-value)
+rng = np.random.default_rng(0)
+X = gen(d=100, m=100, distr="normal", choice="Sig3", rng=rng)
+result = getp(X, l=1, bb=500, rng=rng)
+print(result.yp)  # two-sided sampling p-values for NEW test
+
+# Full simulation loop (like runme.R)
+study = run_simulation(
+    d=100, m=100, distr="normal", choice="Sig3",
+    b=1000, bb=500, l=1, random_state=42, print_progress=False,
+)
+print(study.summary())
 ```
 
 ## Module: statistics — multivariate normality (high-dimensional)
