@@ -1,4 +1,4 @@
-# Student Guide — FunFuncs: Nearest-Neighbor Normality Test (Chen & Xia, 2021)
+# Guide — FunFuncs: Nearest-Neighbor Normality Test (Chen & Xia, 2021)
 
 This guide explains the Python implementation of the nearest-neighbor normality test
 from the paper:
@@ -379,8 +379,4 @@ For the power experiment, change `distr` to `"t4"` (mild heavy tails) or
 `"mixture"` (bimodal) and observe that rejection rates for the NEW test climb
 towards 1.0.
 
----
 
-## 11. License
-
-MIT License — see `LICENSE` in the project root.
