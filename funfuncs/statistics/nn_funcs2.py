@@ -54,11 +54,17 @@ def _matrix_inv_sqrt_from_cov(cov: np.ndarray) -> np.ndarray:
     return eigvecs @ np.diag(1.0 / np.sqrt(eigvals)) @ eigvecs.T
 
 
-def mv_shapiro_test_adapt_thres_mod(x: np.ndarray) -> dict[str, float | str]:
+def mv_shapiro_test_adapt_thres_mod(
+    x: np.ndarray,
+    cov_est: np.ndarray | None = None,
+) -> dict[str, float | str]:
     """
     Modified multivariate Shapiro-Wilk test using adaptive-threshold covariance.
 
     Port of ``mvShapiro.Test.adapt.thres.mod`` in RCodes/funcs2.R.
+
+    If ``cov_est`` is provided it is used instead of calling ``adapt_thres_cov(x)``
+    (same matrix, avoids redundant work when the caller already estimated it).
     """
     arr = np.asarray(x, dtype=float)
     if arr.ndim == 1:
@@ -71,7 +77,8 @@ def mv_shapiro_test_adapt_thres_mod(x: np.ndarray) -> dict[str, float | str]:
         raise ValueError("Sample size must be between 12 and 5000.")
 
     centered = arr - arr.mean(axis=0)
-    cov_est = adapt_thres_cov(arr)
+    if cov_est is None:
+        cov_est = adapt_thres_cov(arr)
     inv_sqrt = _matrix_inv_sqrt_from_cov(cov_est)
     z = centered @ inv_sqrt
 

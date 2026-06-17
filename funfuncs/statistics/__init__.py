@@ -46,12 +46,18 @@ __all__ = [
     "mv_shapiro_test_adapt_thres_mod",
     "print_runme_summary",
     "run_simulation",
+    "save_simulation_results",
 ]
 
 
 def __getattr__(name: str):
-    if name in {"RunmeResult", "run_simulation", "print_runme_summary"}:
-        from funfuncs.statistics.nn_runme import RunmeResult, print_runme_summary, run_simulation
+    if name in {"RunmeResult", "run_simulation", "print_runme_summary", "save_simulation_results"}:
+        from funfuncs.statistics.nn_runme import RunmeResult, print_runme_summary, run_simulation, save_simulation_results
 
-        return {"RunmeResult": RunmeResult, "run_simulation": run_simulation, "print_runme_summary": print_runme_summary}[name]
+        return {
+            "RunmeResult": RunmeResult,
+            "run_simulation": run_simulation,
+            "print_runme_summary": print_runme_summary,
+            "save_simulation_results": save_simulation_results,
+        }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

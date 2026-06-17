@@ -379,4 +379,106 @@ For the power experiment, change `distr` to `"t4"` (mild heavy tails) or
 `"mixture"` (bimodal) and observe that rejection rates for the NEW test climb
 towards 1.0.
 
+---
+
+## 11. Performance — Bottlenecks and How We Fixed Them
+
+The original R code (`RCodes/runme.R`) is correct but **very slow** because the same
+expensive steps are repeated many times, and results are not saved by default.
+
+### 11.1 What was slow (original R design)
+
+| Bottleneck | What happens | How often (default `B=1000`, `BB=500`) |
+|---|---|---|
+| **`getp()` called 3× per replication** | Each call runs `BB` bootstrap loops with distance matrix + MST | ~1,503 distance/MST pipelines per replication |
+| **`adapt.thres.cov()` repeated** | 50 thresholds × 5 CV folds, each with `d×d` matrix ops | **5× per replication** (runme + 3× inside getp on X + mvShapiro) |
+| **`getdis()` + `mstree()`** | `O(m² × d)` distance + MST on `2m` points | Every bootstrap draw — cannot skip |
+| **No save on disk** | `#save(...)` at end of `runme.R` is commented out | Full rerun after any interruption |
+
+> The bootstrap loop inside `getp` **must** stay random — that is the statistical
+> method. We do **not** change that logic.
+
+### 11.2 What the Python refactor does (same logic, less redundant work)
+
+These changes produce **identical p-values** to the original code; they only avoid
+recomputing the same matrix twice.
+
+| Optimization | Where | Savings |
+|---|---|---|
+| **Reuse `adapt_thres_cov(x)`** | `getp(x, xcov=atx)` | Skips 1 heavy `d×d` CV loop per replication |
+| **Reuse covariance in mvSW** | `mv_shapiro_test_adapt_thres_mod(x, cov_est=atx)` | Skips another `adapt_thres_cov(x)` |
+| **Checkpoint after each replication** | `run_simulation(checkpoint_path=...)` | Resume long runs without starting over |
+| **Save final arrays** | `run_simulation(save_results_path=...)` | Same as uncommenting `save()` in R |
+
+Per replication, `adapt_thres_cov` on the **raw** data drops from **3 calls to 1**
+(the other 2 calls inside `getp(XX)` and `getp(XD)` still run — different input data).
+
+### 11.3 How to run a long simulation with checkpointing
+
+```python
+from funfuncs.statistics.nn_runme import run_simulation, _default_results_path
+
+result = run_simulation(
+    d=100,
+    m=100,
+    distr="normal",
+    choice="Sig3",
+    b=1000,
+    bb=500,
+    l=1,
+    random_state=42,
+    print_progress=True,
+    # Save progress after every replication (resume if interrupted):
+    checkpoint_path="results/normal_Sig3_checkpoint.npz",
+    # Save final p-value arrays when done (R save() equivalent):
+    save_results_path=_default_results_path(distr="normal", choice="Sig3", d=100, m=100, b=1000),
+)
+```
+
+If the run stops at replication 400, rerun the **same command** — it resumes from
+the checkpoint automatically (`resume=True` by default).
+
+### 11.4 Loading saved results later
+
+```python
+import numpy as np
+
+data = np.load("normal_Sig3_100_100_1000.npz")
+ypm = data["Ypm"]          # shape (B, 2) — NEW test p-values
+opm = data["Opm"]          # eFR p-values
+
+# Recompute rejection rates without rerunning getp:
+from funfuncs.statistics import getpow
+alpha = 0.05
+print("NEW rejection rate:", getpow(ypm, alpha=alpha))
+```
+
+### 11.5 Analyzing real data (same reuse pattern)
+
+`examples/analyze_dataset.py` now computes `adapt_thres_cov` once and passes it to
+both `getp(..., xcov=...)` and `mv_shapiro_test_adapt_thres_mod(..., cov_est=...)`.
+
+```bash
+python -m examples.analyze_dataset \
+  --path DS_example/clip_class_0.pt \
+  --alpha 0.05 \
+  --bb 200
+```
+
+### 11.6 What is still slow (by design)
+
+| Situation | Why |
+|---|---|
+| High `BB` (bootstrap reps) | Core of Algorithm 2 — each rep simulates data + distance + MST |
+| High `d` (e.g. 2048 features) | `adapt_thres_cov` works with `d×d` matrices |
+| Three `getp` calls in `runme` | Whitened `XX` and `XD` need their own covariance estimates |
+| Real data `m=1000, d=2048` | Paper settings assume `m≈100, d≈100`; full-d runs can take hours |
+
+**Tips for students:**
+
+- Start with small `b` and `bb` to verify the pipeline (`b=5`, `bb=20`).
+- Use `checkpoint_path` for production runs.
+- For very high-dimensional real data, consider a smaller sample subset first, or
+  `--pca-components` only for exploratory runs (not paper-faithful).
+
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -400,6 +401,159 @@ def print_runme_summary(result: RunmeResult, *, alpha: float = 0.05) -> None:
     print()
 
 
+def _default_results_path(
+    *,
+    distr: str,
+    choice: str,
+    d: int,
+    m: int,
+    b: int,
+) -> str:
+    """Filename pattern matching the commented ``save()`` line in RCodes/runme.R."""
+    return f"{distr}_{choice}_{d}_{m}_{b}.npz"
+
+
+def _save_simulation_checkpoint(
+    path: str,
+    *,
+    completed: int,
+    rng_state: dict,
+    ypm: np.ndarray,
+    opm: np.ndarray,
+    yypm: np.ndarray,
+    ydpm: np.ndarray,
+    pv_mv_shapiro: np.ndarray,
+    pv_mardia_s: np.ndarray,
+    pv_mardia_k: np.ndarray,
+    pv_hz: np.ndarray,
+    pv_royston: np.ndarray,
+    pv_ep: np.ndarray,
+    pv_fisher: np.ndarray,
+    meta: dict[str, int | float | str | None],
+) -> None:
+    """Save partial simulation arrays so a long run can resume after interruption."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    np.savez_compressed(
+        path,
+        completed=completed,
+        rng_state=np.array(rng_state, dtype=object),
+        ypm=ypm,
+        opm=opm,
+        yypm=yypm,
+        ydpm=ydpm,
+        pv_mv_shapiro=pv_mv_shapiro,
+        pv_mardia_s=pv_mardia_s,
+        pv_mardia_k=pv_mardia_k,
+        pv_hz=pv_hz,
+        pv_royston=pv_royston,
+        pv_ep=pv_ep,
+        pv_fisher=pv_fisher,
+        meta=np.array(meta, dtype=object),
+    )
+
+
+def _load_simulation_checkpoint(path: str) -> dict:
+    """Load a checkpoint written by ``_save_simulation_checkpoint``."""
+    with np.load(path, allow_pickle=True) as data:
+        return {
+            "completed": int(data["completed"]),
+            "rng_state": data["rng_state"].item(),
+            "ypm": data["ypm"],
+            "opm": data["opm"],
+            "yypm": data["yypm"],
+            "ydpm": data["ydpm"],
+            "pv_mv_shapiro": data["pv_mv_shapiro"],
+            "pv_mardia_s": data["pv_mardia_s"],
+            "pv_mardia_k": data["pv_mardia_k"],
+            "pv_hz": data["pv_hz"],
+            "pv_royston": data["pv_royston"],
+            "pv_ep": data["pv_ep"],
+            "pv_fisher": data["pv_fisher"],
+            "meta": data["meta"].item(),
+        }
+
+
+def _checkpoint_matches_settings(
+    meta: dict[str, int | float | str | None],
+    *,
+    d: int,
+    m: int,
+    distr: str,
+    choice: str,
+    b: int,
+    bb: int,
+    l: int,
+    alpha: float,
+    random_state: int | None,
+) -> bool:
+    return (
+        meta.get("d") == d
+        and meta.get("m") == m
+        and meta.get("distr") == distr
+        and meta.get("choice") == choice
+        and meta.get("b") == b
+        and meta.get("bb") == bb
+        and meta.get("l") == l
+        and meta.get("alpha") == alpha
+        and meta.get("random_state") == random_state
+    )
+
+
+def save_simulation_results(
+    path: str,
+    *,
+    d: int,
+    m: int,
+    distr: str,
+    choice: str,
+    b: int,
+    bb: int,
+    l: int,
+    ypm: np.ndarray,
+    opm: np.ndarray,
+    yypm: np.ndarray,
+    ydpm: np.ndarray,
+    pv_mv_shapiro: np.ndarray,
+    pv_mardia_s: np.ndarray,
+    pv_mardia_k: np.ndarray,
+    pv_hz: np.ndarray,
+    pv_fisher: np.ndarray,
+    pv_royston: np.ndarray | None = None,
+    pv_ep: np.ndarray | None = None,
+    mardia_bonferroni: float | None = None,
+    result: RunmeResult | None = None,
+) -> None:
+    """Persist simulation p-value arrays (R ``save(Ypm, ...)`` equivalent)."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    payload: dict[str, object] = {
+        "d": d,
+        "m": m,
+        "distr": distr,
+        "choice": choice,
+        "b": b,
+        "bb": bb,
+        "l": l,
+        "Ypm": ypm,
+        "Opm": opm,
+        "YYpm": yypm,
+        "YDpm": ydpm,
+        "pvmvShapiro": pv_mv_shapiro,
+        "pvMardia_s": pv_mardia_s,
+        "pvMardia_k": pv_mardia_k,
+        "pvhz": pv_hz,
+        "pvFisher": pv_fisher,
+    }
+    if pv_royston is not None:
+        payload["pvRoyston"] = pv_royston
+    if pv_ep is not None:
+        payload["pvEp"] = pv_ep
+    if mardia_bonferroni is not None:
+        payload["Mardia_Bonf"] = mardia_bonferroni
+    if result is not None:
+        payload["rejection_rates"] = np.array(result.summary(), dtype=object)
+    np.savez_compressed(path, **payload)
+
+
 def run_simulation(
     *,
     d: int = 100,
@@ -412,11 +566,21 @@ def run_simulation(
     alpha: float = 0.05,
     random_state: int | None = None,
     print_progress: bool = True,
+    checkpoint_path: str | None = None,
+    save_results_path: str | None = None,
+    resume: bool = True,
 ) -> RunmeResult:
     """
     Full simulation loop from RCodes/runme.R.
 
     Returns rejection rates (power/size) for NEW test, eFR, mvSW, Fisher, Mardia, HZ, etc.
+
+    Performance notes (same statistical logic as R):
+    - ``adapt_thres_cov(x)`` is computed once per replication and reused in
+      ``getp(x, xcov=...)`` and ``mv_shapiro_test_adapt_thres_mod(x, cov_est=...)``.
+    - ``checkpoint_path``: save partial arrays + RNG state after each replication.
+    - ``save_results_path``: save final summary arrays when the run completes
+      (equivalent to uncommenting ``save()`` in RCodes/runme.R).
     """
     rng = np.random.default_rng(random_state)
 
@@ -433,18 +597,53 @@ def run_simulation(
     pv_ep = np.full(b, np.nan)
     pv_fisher = np.zeros(b)
 
-    if print_progress:
+    meta = {
+        "d": d,
+        "m": m,
+        "distr": distr,
+        "choice": choice,
+        "b": b,
+        "bb": bb,
+        "l": l,
+        "alpha": alpha,
+        "random_state": random_state,
+    }
+
+    start_ii = 0
+    if checkpoint_path and resume and os.path.isfile(checkpoint_path):
+        ckpt = _load_simulation_checkpoint(checkpoint_path)
+        if not _checkpoint_matches_settings(ckpt["meta"], **meta):
+            raise ValueError(
+                f"Checkpoint settings do not match current run_simulation() arguments: {checkpoint_path}"
+            )
+        start_ii = ckpt["completed"]
+        ypm[:start_ii] = ckpt["ypm"]
+        opm[:start_ii] = ckpt["opm"]
+        yypm[:start_ii] = ckpt["yypm"]
+        ydpm[:start_ii] = ckpt["ydpm"]
+        pv_mv_shapiro[:start_ii] = ckpt["pv_mv_shapiro"]
+        pv_mardia_s[:start_ii] = ckpt["pv_mardia_s"]
+        pv_mardia_k[:start_ii] = ckpt["pv_mardia_k"]
+        pv_hz[:start_ii] = ckpt["pv_hz"]
+        pv_royston[:start_ii] = ckpt["pv_royston"]
+        pv_ep[:start_ii] = ckpt["pv_ep"]
+        pv_fisher[:start_ii] = ckpt["pv_fisher"]
+        rng.bit_generator.state = ckpt["rng_state"]
+        if print_progress:
+            print(f"Resuming from replication {start_ii + 1}/{b} using checkpoint: {checkpoint_path}")
+
+    if print_progress and start_ii == 0:
         print_runme_header(d=d, m=m, distr=distr, choice=choice, b=b, bb=bb, l=l, alpha=alpha)
     verbose_detail = print_progress and b <= 20
 
-    for ii in range(b):
+    for ii in range(start_ii, b):
         x = gen(d=d, m=m, distr=distr, choice=choice, rng=rng)
         atx = adapt_thres_cov(x)
         inv_sqrt = _matrix_inv_sqrt_from_cov(atx)
         xx = x @ inv_sqrt
         xd = x @ np.diag(np.diag(inv_sqrt))
 
-        temp = getp(x, l=l, bb=bb, rng=rng)
+        temp = getp(x, l=l, bb=bb, rng=rng, xcov=atx)
         temp2 = getp(xx, l=l, bb=bb, rng=rng)
         temp3 = getp(xd, l=l, bb=bb, rng=rng)
 
@@ -453,7 +652,7 @@ def run_simulation(
         ydpm[ii] = temp3.yp
         opm[ii] = temp.op
 
-        pv_mv_shapiro[ii] = mv_shapiro_test_adapt_thres_mod(x)["p_value"]
+        pv_mv_shapiro[ii] = mv_shapiro_test_adapt_thres_mod(x, cov_est=atx)["p_value"]
         m_s, m_k = _mardia_pvalues(x, atx)
         pv_mardia_s[ii] = m_s
         pv_mardia_k[ii] = m_k
@@ -464,6 +663,25 @@ def run_simulation(
             pv_ep[ii] = _ep_p(x, atx)
 
         pv_fisher[ii] = _fisher_p(xx)
+
+        if checkpoint_path:
+            _save_simulation_checkpoint(
+                checkpoint_path,
+                completed=ii + 1,
+                rng_state=rng.bit_generator.state,
+                ypm=ypm,
+                opm=opm,
+                yypm=yypm,
+                ydpm=ydpm,
+                pv_mv_shapiro=pv_mv_shapiro,
+                pv_mardia_s=pv_mardia_s,
+                pv_mardia_k=pv_mardia_k,
+                pv_hz=pv_hz,
+                pv_royston=pv_royston,
+                pv_ep=pv_ep,
+                pv_fisher=pv_fisher,
+                meta=meta,
+            )
 
         if print_progress:
             print_replication_row(
@@ -502,8 +720,35 @@ def run_simulation(
         fisher=float(getpow(pv_fisher.reshape(-1, 1), alpha=alpha)[0]),
     )
 
+    if save_results_path:
+        save_simulation_results(
+            save_results_path,
+            d=d,
+            m=m,
+            distr=distr,
+            choice=choice,
+            b=b,
+            bb=bb,
+            l=l,
+            ypm=ypm,
+            opm=opm,
+            yypm=yypm,
+            ydpm=ydpm,
+            pv_mv_shapiro=pv_mv_shapiro,
+            pv_mardia_s=pv_mardia_s,
+            pv_mardia_k=pv_mardia_k,
+            pv_hz=pv_hz,
+            pv_fisher=pv_fisher,
+            pv_royston=pv_royston if d < m else None,
+            pv_ep=pv_ep if d < m else None,
+            mardia_bonferroni=mardia_bonf,
+            result=result,
+        )
+
     if print_progress:
         print_runme_summary(result, alpha=alpha)
+        if save_results_path:
+            print(f"Saved final arrays to: {save_results_path}")
 
     return result
 

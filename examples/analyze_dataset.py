@@ -103,7 +103,8 @@ def analyze_matrix(
     if use_pca:
         print(f"  (applied on top-{k} PCA components)")
     print("-" * 88)
-    res = getp(x_nn, l=1, bb=bb)
+    cov_est = adapt_thres_cov(x_nn)
+    res = getp(x_nn, l=1, bb=bb, xcov=cov_est)
     new_p = float(np.asarray(res.yp).ravel()[0])
     efr_p = float(np.asarray(res.op).ravel()[0])
     print(f"  NEW p-value (Yp)           : {new_p:.4g}")
@@ -117,10 +118,9 @@ def analyze_matrix(
     if use_pca:
         print(f"  (applied on top-{k} PCA components)")
     print("-" * 88)
-    cov_est = adapt_thres_cov(x_nn)
 
     # mvSW (modified multivariate Shapiro-Wilk)
-    mv_sw_res = mv_shapiro_test_adapt_thres_mod(x_nn)
+    mv_sw_res = mv_shapiro_test_adapt_thres_mod(x_nn, cov_est=cov_est)
     mv_sw_p = float(mv_sw_res["p_value"])
 
     # Mardia skewness / kurtosis

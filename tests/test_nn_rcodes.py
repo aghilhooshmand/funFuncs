@@ -36,6 +36,32 @@ def test_mv_shapiro_runs():
     assert 0 <= res["p_value"] <= 1
 
 
+def test_getp_precomputed_xcov_matches_internal():
+    """Passing xcov must give identical p-values to computing it inside getp."""
+    rng = np.random.default_rng(7)
+    x = rng.normal(size=(30, 6))
+    cov = adapt_thres_cov(x)
+
+    rng_a = np.random.default_rng(99)
+    internal = getp(x, l=1, bb=10, rng=rng_a)
+
+    rng_b = np.random.default_rng(99)
+    external = getp(x, l=1, bb=10, rng=rng_b, xcov=cov)
+
+    assert np.allclose(internal.yp, external.yp)
+    assert np.allclose(internal.op, external.op)
+
+
+def test_mv_shapiro_precomputed_cov_matches_internal():
+    rng = np.random.default_rng(3)
+    x = rng.normal(size=(50, 5))
+    cov = adapt_thres_cov(x)
+    a = mv_shapiro_test_adapt_thres_mod(x)
+    b = mv_shapiro_test_adapt_thres_mod(x, cov_est=cov)
+    assert a["p_value"] == b["p_value"]
+    assert a["statistic"] == b["statistic"]
+
+
 def test_run_simulation_smoke():
     result = run_simulation(
         d=8,

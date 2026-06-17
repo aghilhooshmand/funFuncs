@@ -255,6 +255,7 @@ def getp(
     kk: int = 5,
     cx_generate: bool = False,
     rng: np.random.Generator | None = None,
+    xcov: np.ndarray | None = None,
 ) -> GetPResult:
     """
     Nearest-neighbor normality test p-values (R ``getp``).
@@ -263,11 +264,15 @@ def getp(
     - ``Yp``: NEW test based on r(Y Y)
     - ``Op``: extended Friedman-Rafsky style statistic
     - ``Xp``, ``Sp``, ``SXY1p``, ``SXY2p``: related diagnostics
+
+    If ``xcov`` is provided it is used instead of calling ``adapt_thres_cov(x)``
+    (same matrix, avoids redundant work when the caller already estimated it).
     """
     rng = np.random.default_rng() if rng is None else rng
     m, d = x.shape
     xbar = x.mean(axis=0)
-    xcov = adapt_thres_cov(x, kk=kk)
+    if xcov is None:
+        xcov = adapt_thres_cov(x, kk=kk)
 
     ratio0v = np.zeros(l)
     xratio0v = np.zeros(l)
